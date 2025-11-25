@@ -27,62 +27,9 @@ def getAnswer(url, headers, question_id):
     #Tạo object để giải bài toán với max_depth phù hợp
     solver = Solver(init_field = custom_field, max_depth=500)
     
-    # Chọn parameters tối ưu dựa trên size
-    if size <= 8:
-        # Size nhỏ: Tìm kiếm sâu để đạt perfect score
-        params = {
-            'weight': 1.2,           
-            'time_limit': 300,      
-            'stuck_threshold': 3000,  # Restart sớm hơn
-            'sa_iterations': 5,       # 5 lần restart
-            'max_depth': 120,
-            'beam_width': 600000,     # Giới hạn queue
-            'enable_restart': True    # Bật restart
-        }
-    elif size <= 12:
-        # Size trung bình: Với heuristic thông minh hơn + lookahead
-        params = {
-            'weight': 1.0,            # Heuristic tốt, không cần weight cao
-            'time_limit': 300,     
-            'stuck_threshold': 5000,  # Search sâu hơn nữa trước restart
-            'sa_iterations': 8,       # Ít restart, focus vào quality
-            'max_depth': 180,         # Depth cao để cho lookahead hoạt động
-            'beam_width': 1000000,    # Beam rất lớn để keep diverse paths
-            'enable_restart': True
-        }
-    elif size <= 16:
-        # Size lớn: Tăng SA để thoát local optima nhưng vẫn ưu tiên pairs
-        params = {
-            'weight': 1.5,           
-            'time_limit': 300,       
-            'stuck_threshold': 5000, 
-            'sa_iterations': 10,     
-            'max_depth': 150,
-            'beam_width': 1000000,
-            'enable_restart': True
-        }
-    elif size <= 20:
-        # Size rất lớn: Aggressive nhưng vẫn cố gắng đạt maximum pairs
-        params = {
-            'weight': 1.8,           
-            'time_limit': 300,     
-            'stuck_threshold': 6000, 
-            'sa_iterations': 12,     
-            'max_depth': 180,
-            'beam_width': 1200000,
-            'enable_restart': True
-        }
-    else:
-        # Size khổng lồ (>20): Rất aggressive
-        params = {
-            'weight': 2.0,           
-            'time_limit': 300,       
-            'stuck_threshold': 8000, 
-            'sa_iterations': 15,     
-            'max_depth': 200,
-            'beam_width': 1500000,
-            'enable_restart': True
-        }
+    # Chọn parameters tối ưu dựa trên size — dùng helper trong Solver
+    # (moved to Solver to centralize tuning)
+    params = Solver.default_params_for_size(size)
     
     print(f"\n📊 Problem size: {size}x{size}")
     print(f"🎯 TARGET: {(size*size)//2} pairs (Priority #1)")
@@ -135,13 +82,12 @@ def submitAnswer(url, headers, question_id):
     print(f"Validated score:   {final_validation_score}/{target_score}")
     
     if final_validation_score == best_field.score():
-        print(f"✅ Solution is VALID!")
+        print(f"Solution is VALID!")
     else:
-        print(f"❌ WARNING: Solution mismatch!")
-        print(f"   Expected: {best_field.score()}, Got: {final_validation_score}")
+        print(f"WARNING: Solution mismatch!")
+        print(f"Expected: {best_field.score()}, Got: {final_validation_score}")
         print(f"\n🔧 Trying to fix solution...")
         
-        # Re-validate step by step to find the issue
         test_field = custom_field
         valid_path = []
         
@@ -150,7 +96,6 @@ def submitAnswer(url, headers, question_id):
             test_field = test_field.rotate(x, y, size)
             new_score = test_field.score()
             
-            # Only keep moves that don't decrease score significantly
             if new_score >= prev_score or (new_score >= prev_score - 1):
                 valid_path.append((x, y, size))
             else:
@@ -212,32 +157,24 @@ def submitAnswer(url, headers, question_id):
     
     print(f"{'='*70}")
     print(f"🎯 KẾT QUẢ CUỐI CÙNG")
-    print(f"{'='*70}")
-    print(f"📊 SCORING BREAKDOWN:")
-    print(f"   Priority 1 - Pairs:  {server_pairs}/{target_score} pairs")
-    print(f"   Priority 2 - Moves:  {len(best_path)} moves")
-    print(f"   Priority 3 - Time:   (submitted)")
-    print()
     print(f"Server Score:      {final_score}")
     print(f"Local Match Count: {validation_field.score()}/{target_score}")
     
     if final_validation_score == target_score:
-        print(f"✅ PERFECT - All pairs matched!")
+        print(f"PERFECT - All pairs matched!")
     else:
-        print(f"⚠️  INCOMPLETE - {target_score - final_validation_score} pairs missing")
+        print(f"INCOMPLETE - {target_score - final_validation_score} pairs missing")
     
     print(f"{'='*70}\n")
     # print("Chi tiết:", score_data)
     
-
-
 def testLocal(url, headers, question_id):
     """Test solution locally without submitting"""
     
     best_field, custom_field, best_path = getAnswer(url=url, headers=headers, question_id=question_id)
     
     print(f"\n{'='*70}")
-    print(f"📋 LOCAL TESTING (NO SUBMISSION)")
+    print(f"LOCAL TESTING (NO SUBMISSION)")
     print(f"{'='*70}")
     print(f"BEFORE processing - len(best_path): {len(best_path)}")
     
@@ -255,7 +192,7 @@ def testLocal(url, headers, question_id):
     initial_score = custom_field.score()
     target_score = (custom_field.n * custom_field.n) // 2
     
-    print(f"\n📍 Initial field state:")
+    print(f"\nInitial field state:")
     print(validation_field)
     print(f"Initial score: {initial_score}/{target_score}")
     
@@ -276,12 +213,6 @@ def testLocal(url, headers, question_id):
     
     print(f"\n{'='*70}")
     print(f"📊 LOCAL TEST RESULTS")
-    print(f"{'='*70}")
-    print(f"🎯 SCORING CRITERIA (Priority Order):")
-    print(f"   1. Number of pairs (higher is better)")
-    print(f"   2. Number of moves (lower is better)")
-    print(f"   3. Submission time (earlier is better)")
-    print()
     print(f"Initial score:     {initial_score}/{target_score} ({initial_score/target_score*100:.1f}%)")
     print(f"Expected score:    {best_field.score()}/{target_score} ({best_field.score()/target_score*100:.1f}%)")
     print(f"Validated score:   {final_validation_score}/{target_score} ({final_validation_score/target_score*100:.1f}%)")
@@ -289,40 +220,22 @@ def testLocal(url, headers, question_id):
     print(f"Score improvement: {final_validation_score - initial_score:+d}")
     
     if final_validation_score == best_field.score():
-        print(f"✅ Solution is VALID!")
+        print(f"Solution is VALID!")
     else:
-        print(f"❌ WARNING: Solution mismatch!")
-        print(f"   Expected: {best_field.score()}, Got: {final_validation_score}")
-    
-    print()
-    if final_validation_score == target_score:
-        print(f"🎉 PERFECT SOLUTION! Maximum pairs achieved!")
-        print(f"   ⭐ Priority 1: ✅ {final_validation_score}/{target_score} pairs")
-        print(f"   ⭐ Priority 2: {len(best_path)} moves (optimize if possible)")
-    elif final_validation_score >= target_score * 0.9:
-        print(f"👍 GOOD SOLUTION (>90%)")
-        print(f"   ⚠️  Priority 1: {final_validation_score}/{target_score} pairs - Missing {target_score - final_validation_score} pairs")
-        print(f"   💡 Try to improve pairs count first!")
-    elif final_validation_score >= target_score * 0.7:
-        print(f"😐 ACCEPTABLE SOLUTION (>70%)")
-        print(f"   ⚠️  Priority 1: {final_validation_score}/{target_score} pairs - Missing {target_score - final_validation_score} pairs")
-        print(f"   💡 Need more improvements on pairs count!")
-    else:
-        print(f"😞 POOR SOLUTION (<70%)")
-        print(f"   ❌ Priority 1: {final_validation_score}/{target_score} pairs - Missing {target_score - final_validation_score} pairs")
-        print(f"   💡 Focus on increasing pairs count!")
+        print(f"WARNING: Solution mismatch!")
+        print(f"Expected: {best_field.score()}, Got: {final_validation_score}")
     
     print(f"{'='*70}\n")
     
     return validation_field, best_path
 
 def main():
-    TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwibmFtZSI6IkhDTVVURS5Qcm9jb24iLCJpc19hZG1pbiI6ZmFsc2UsImlhdCI6MTc2MzIwMjcxNiwiZXhwIjoxNzYzMzc1NTE2fQ.hnWBlQDQGBdRy3uy1REDymKDWYAt_P6TwAiO2t6Z4_0"
+    TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwibmFtZSI6IkhDTVVURS5Qcm9jb24iLCJpc19hZG1pbiI6ZmFsc2UsImlhdCI6MTc2MzYyNDg3MCwiZXhwIjoxNzYzNzk3NjcwfQ.P2IJvQUg7ha4JKXl2BTN0bRkDzNJCG0mLdJciymU8lc"
     url = "https://112.137.129.202"
     headers = {"Authorization": TOKEN}
 
     #ID câu hỏi
-    question_id = 1
+    question_id = 5
     
     # MODE: 'test' để test local, 'submit' để nộp bài
     MODE = 'submit'
