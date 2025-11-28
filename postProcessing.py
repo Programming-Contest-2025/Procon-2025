@@ -7,8 +7,6 @@ def removeDuplicate(path : list) -> list:
     Nếu có 4 action liên tiếp trùng nhau thì thực hiện xóa cả 4 action đó
     Vì nó quay lại trạng thái cũ
     """
-    if not path:
-        return []
     
     result = []
     run = 1
@@ -18,10 +16,6 @@ def removeDuplicate(path : list) -> list:
         else:
             result.extend([path[i - 1]] * (run % 4))
             run = 1
-    
-    # Xử lý phần tử cuối cùng (BUG FIX)
-    result.extend([path[-1]] * (run % 4))
-    
     return result
 
 def removeSameState(path : list, custom_field : Field) -> list:

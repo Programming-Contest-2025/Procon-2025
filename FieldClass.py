@@ -7,10 +7,6 @@ import numpy as np
 #Không thể sử dụng mappings được tạo bởi một 24x24 cho các n khác -> sai index
 #khi flatten
 def build_mapping(n):
-    """
-    Tạo mapping cho phép xoay 90° theo chiều kim đồng hồ
-    Công thức: giá trị tại (i,j) sẽ đi tới vị trí (j, size-1-i)
-    """
     mappings = {}  # dict: (x, y, size) -> perm
     for size in range(2, n+1):
         for y in range(n - size + 1):
@@ -18,15 +14,9 @@ def build_mapping(n):
                 perm = list(range(n*n))  # mặc định: giữ nguyên
                 for i in range(size):
                     for j in range(size):
-                        # Vị trí nguồn trong ma trận lớn
-                        src_pos = (y+i) * n + (x+j)
-                        # Xoay 90° clockwise: (i,j) -> (j, size-1-i)
-                        new_i = j
-                        new_j = size - 1 - i
-                        dst_pos = (y+new_i) * n + (x+new_j)
-                        # perm[i] = j nghĩa là: new_flat[i] = flat[j]
-                        # Nên: new_flat[dst_pos] = flat[src_pos] => perm[dst_pos] = src_pos
-                        perm[dst_pos] = src_pos
+                        src = (y+i) * n + (x+j)
+                        dst = (y+j) * n + (x+size-1-i)
+                        perm[src] = dst
                 mappings[(x, y, size)] = perm
     return mappings
 
@@ -52,8 +42,9 @@ class Field:
         # Flatten field
         flat = np.array(self.entities).reshape(-1)
         
-        # Apply perm: new_flat[i] = flat[perm[i]]
-        new_flat = flat[perm]  # FIXED: dùng fancy indexing
+        # Apply perm (src -> dst)
+        new_flat = np.empty_like(flat)
+        new_flat[perm] = flat  # quan trọng!
         
         # Reshape lại thành ma trận
         new_entities = new_flat.reshape(self.n, self.n).tolist()
@@ -77,101 +68,51 @@ class Field:
                 if j + 1 < n and self.entities[i][j + 1] == v: score += 1
         return score
     
+    def incremental_hash(self):
+        return hash(tuple(self.row_hashes))
+    
     def get_unpaired(self):
-        """
-        Lấy danh sách các cặp giá trị và các cặp chưa kề nhau
-        Returns:
-            positions (dict): {value: [(y1, x1), (y2, x2)]}
-            unpaired (list): [((y1, x1), (y2, x2)), ...] - các cặp chưa kề nhau
-        """
+        """Trả về dictionary các giá trị chưa ghép cặp và list tọa độ các cặp"""
         n = self.n
-        positions = {}
-        unpaired = []
+        positions = {}  # value -> list of (y, x) positions
         
-        for y in range(n):
-            for x in range(n):
-                v = self.entities[y][x]
-                positions.setdefault(v, []).append((y, x))
-        
-        for coords in positions.values():
-            #Cặp tọa độ của 2 giá trị trùng nhau
-            (y1, x1), (y2, x2) = coords
-            manhattan_distance = abs(y1 - y2) + abs(x1 - x2)
-            #Cặp tọa độ không kề nhau
-            if manhattan_distance > 1: 
-                unpaired.append(coords)
-        return positions, unpaired
-    
-    def get_unpaired_coords_set(self):
-        """CẢI TIẾN #3: Trả về set tọa độ của các ô chưa được ghép cặp"""
-        n = self.n
-        positions = {}
-        
-        for y in range(n):
-            for x in range(n):
-                v = self.entities[y][x]
-                positions.setdefault(v, []).append((y, x))
-        
-        unpaired_coords = set()
-        for coords in positions.values():
-            (y1, x1), (y2, x2) = coords
-            manhattan_distance = abs(y1 - y2) + abs(x1 - x2)
-            if manhattan_distance > 1:
-                unpaired_coords.add((y1, x1))
-                unpaired_coords.add((y2, x2))
-        
-        return unpaired_coords
-    
-    def get_manhattan_distance_sum(self):
-        """
-        Tính tổng khoảng cách Manhattan của tất cả các cặp chưa kề nhau
-        """
-        _, unpaired = self.get_unpaired()
-        total = 0
-        for coords in unpaired:
-            (y1, x1), (y2, x2) = coords
-            total += abs(y1 - y2) + abs(x1 - x2)
-        return total
-    
-    def calculate_heuristic_sa(self, en_area=None):
-        """
-        Heuristic cho Simulated Annealing
-        Tính điểm dựa trên các ô kề nhau và khoảng cách Manhattan
-        """
-        n = self.n 
-        score = 0
-        
-        #Xác định vùng ảnh hưởng
-        if en_area is None:
-            x_, y_, size_ = 0, 0, n
-        else:
-            x_, y_, size_ = en_area
-        
-        #Cộng điểm cho các ô kề nhau
-        for i in range(y_, y_ + size_):
-            for j in range(x_, x_ + size_):
-                v = self.entities[i][j]
-                if i + 1 < n and self.entities[i+1][j] == v:
-                    score += 100
-                if j + 1 < n and self.entities[i][j+1] == v:
-                    score += 100
-        
-        #Trừ khoảng cách manhattan cho các cặp chưa kề
-        position = {}
+        # Tìm tất cả positions của mỗi value
         for i in range(n):
             for j in range(n):
                 v = self.entities[i][j]
-                position.setdefault(v, []).append((i, j))
-        for coords in position.values():
-            (y1, x1), (y2, x2) = coords
-            manhattan_distance = abs(y1 - y2) + abs(x1 - x2)
-            if manhattan_distance > 1:
-                score -= manhattan_distance 
+                if v not in positions:
+                    positions[v] = []
+                positions[v].append((i, j))
         
-        return score
+        # Lọc ra các values chưa ghép cặp (không có 2 ô kề nhau)
+        unpaired = {}
+        unpaired_coords = []
+        
+        for v, coords in positions.items():
+            if len(coords) != 2:
+                continue
+            
+            (y1, x1), (y2, x2) = coords
+            # Check nếu 2 ô kề nhau
+            is_paired = (abs(y1 - y2) + abs(x1 - x2) == 1)
+            
+            if not is_paired:
+                unpaired[v] = coords
+                unpaired_coords.append(coords)
+        
+        return unpaired, unpaired_coords
     
-    def incremental_hash(self):
-        return hash(tuple(self.row_hashes))
+    def get_unpaired_coords_set(self):
+        """Trả về set các tọa độ (i, j) của các ô chưa ghép cặp"""
+        _, unpaired_coords = self.get_unpaired()
+        coords_set = set()
+        
+        for coords in unpaired_coords:
+            (y1, x1), (y2, x2) = coords
+            coords_set.add((y1, x1))
+            coords_set.add((y2, x2))
+        
+        return coords_set
     
     def __str__(self):
         return "\n".join(" ".join(map(str, row)) for row in self.entities)
