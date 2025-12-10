@@ -1,58 +1,83 @@
-#Nhận vào một chuỗi các action nhưng đang chưa tối ưu
-#Thực hiện rút gọn để giảm số bước
 from FieldClass import Field
 
-def removeDuplicate(path : list) -> list:
-    """ 
-    Nếu có 4 action liên tiếp trùng nhau thì thực hiện xóa cả 4 action đó
-    Vì nó quay lại trạng thái cũ
+def removeDuplicate(path: list) -> list:
     """
-    
+    Xóa các chuỗi action lặp lại 4 lần (vì quay 4 lần trả về trạng thái cũ).
+    Giữ lại run % 4 lần mỗi nhóm run của same action.
+    """
+    if not path:
+        return []
+
     result = []
+    prev = path[0]
     run = 1
-    for i in range(1, len(path)):
-        if path[i] == path[i - 1]:
+    for action in path[1:]:
+        if action == prev:
             run += 1
         else:
-            result.extend([path[i - 1]] * (run % 4))
+            keep = run % 4
+            if keep:
+                result.extend([prev] * keep)
+            # reset
+            prev = action
             run = 1
+
+    # xử lý run cuối cùng
+    keep = run % 4
+    if keep:
+        result.extend([prev] * keep)
+
     return result
 
-def removeSameState(path : list, custom_field : Field) -> list:
-    """ 
-    Xóa các hành động làm cho trạng thái quay lại trạng thái 
-    đã gặp trong quá khứ
+
+def removeSameState(path: list, init_field: Field) -> list:
     """
-    field = custom_field
-    seen = {field.incremental_hash() : 0}
+    Duyệt path từ init_field, nếu gặp state đã thấy trước đó (hash), 
+    thì rollback all actions between hai lần gặp đó (vì tạo cycle),
+    và tiếp tục.
+    Trả về path đã rút gọn (không có các đoạn tạo lại state cũ).
+    """
+    field = init_field
+    seen = {field.incremental_hash(): 0}  # map hash -> length(result) at that time
     result = []
-    
-    for (x, y, size) in path:
-        field = field.rotate(x=x, y=y, size=size)
+
+    for action in path:
+        x, y, size = action
+        field = field.rotate(x, y, size)
         h = field.incremental_hash()
-        
-        #Quay lại trạng thái đã đi
-        #Tất cả các hành động từ trạng thái trước đó đến trạng thái hiện tại
-        #là vô nghĩa
+
         if h in seen:
-            #Xóa toàn bộ giữa hai mốc
+            # rollback to the earlier occurrence index
             rollback_idx = seen[h]
+            # keep prefix of result up to rollback_idx
             result = result[:rollback_idx]
-            
-            #Khôi phục field bằng cách mô phỏng lại từ đầu
-            field = custom_field
-            for (xx, yy, ss) in result:
-                field = field.rotate(xx, yy, ss)
-            
-            #Làm mới map seen
-            seen = {custom_field.incremental_hash() : 0}
-            f_tmp = custom_field
+
+            # rebuild field and seen from init_field using current result
+            field = init_field
+            seen = {field.incremental_hash(): 0}
             for i, (xx, yy, ss) in enumerate(result, 1):
-                f_tmp = f_tmp.rotate(xx, yy, ss)
-                seen[f_tmp.incremental_hash()] = i
-        
+                field = field.rotate(xx, yy, ss)
+                seen[field.incremental_hash()] = i
+            # continue (we already applied this action and it matched seen,
+            # so we effectively "discard" the looped segment)
         else:
-            result.append((x, y, size))
+            result.append(action)
             seen[h] = len(result)
-    
+
     return result
+
+
+def post_processing(path: list, init_field: Field):
+    """
+    Chạy removeDuplicate rồi removeSameState, trả về path rút gọn.
+    Gợi ý: sau khi có path rút gọn, nếu cần bạn có thể rebuild field từ init_field.
+    """
+    path = removeDuplicate(path=path)
+    path = removeSameState(path=path, init_field=init_field)
+    return path
+
+def apply_path(init_field, path):
+    f = init_field
+    for (x,y,size) in path:
+        f = f.rotate(x,y,size)
+    return f
